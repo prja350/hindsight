@@ -1,11 +1,15 @@
 import os
+from pathlib import Path
 import dash
 from dash import html
+
+_PROJECT_ROOT = Path(__file__).parent.parent
+_PAGES_FOLDER = str(_PROJECT_ROOT / "ui" / "pages")
 
 app = dash.Dash(
     __name__,
     use_pages=True,
-    pages_folder="ui/pages",
+    pages_folder=_PAGES_FOLDER,
     suppress_callback_exceptions=True,
 )
 
