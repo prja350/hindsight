@@ -3,7 +3,7 @@ import dash
 from dash import html, dash_table, dcc
 
 from ui.components.charts import stock_overlay_chart
-from ui.pages.home import _results
+from ui.state import _results
 
 dash.register_page(__name__, path='/strategy/<strategy_id>')
 

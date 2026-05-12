@@ -5,7 +5,7 @@ from dash import html, dash_table, dcc
 
 from ui.components.charts import candlestick_chart
 from ui.components.tables import trades_table_rows
-from ui.pages.home import _results
+from ui.state import _results
 
 dash.register_page(__name__, path='/stock/<strategy_id>/<ticker>')
 
