@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=. --cov-report=term-missing --cov-omit=tests/*,ui/*"
+
+[tool.coverage.run]
+omit = ["tests/*", "ui/*"]
