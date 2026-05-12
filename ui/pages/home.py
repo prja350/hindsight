@@ -100,7 +100,7 @@ def layout() -> html.Div:
                 html.Div([
                     html.Label('最長持有天數', style=_LABEL),
                     dcc.Input(id='max-hold', type='number', value=60,
-                              min=1, max=365, step=1,
+                              min=1, step=1,
                               style={**_INPUT, 'marginRight': '0'}),
                 ], style={**_COL, 'marginRight': '0'}),
             ], style={'display': 'flex', 'marginBottom': '16px'}),

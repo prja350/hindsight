@@ -29,8 +29,10 @@ class FinMindAdapter:
         if raw is None or raw.empty:
             return pd.DataFrame()
         df = raw.rename(columns={
-            'stock_id': 'ticker', 'Open': 'open', 'Max': 'high',
-            'Min': 'low', 'Close': 'close', 'Trade_Volume': 'volume',
+            'stock_id': 'ticker',
+            'max': 'high',
+            'min': 'low',
+            'Trading_Volume': 'volume',
         })
         df['ticker'] = ticker
         return df[['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']].copy()
