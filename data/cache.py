@@ -78,6 +78,8 @@ class CacheManager:
         return df if not df.empty else None
 
     def save_ohlcv(self, ticker: str, df: pd.DataFrame, source: str) -> None:
+        if df.empty:
+            return
         df = df[['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']].copy()
         df['ticker'] = ticker
         with self._conn() as conn:
@@ -99,6 +101,8 @@ class CacheManager:
         return df if not df.empty else None
 
     def save_fundamentals(self, ticker: str, df: pd.DataFrame, source: str) -> None:
+        if df.empty:
+            return
         df = df[['ticker', 'date', 'pe_ratio', 'pb_ratio', 'market_cap']].copy()
         df['ticker'] = ticker
         with self._conn() as conn:
@@ -117,6 +121,8 @@ class CacheManager:
         return df if not df.empty else None
 
     def save_ticker_list(self, df: pd.DataFrame, source: str) -> None:
+        if df.empty:
+            return
         df = df[['ticker', 'name', 'market', 'listed_date']].copy()
         with self._conn() as conn:
             conn.execute("DELETE FROM ticker_list")
