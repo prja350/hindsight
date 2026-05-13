@@ -44,7 +44,7 @@ def _render_results() -> html.Div:
             style={'color': '#999', 'padding': '20px 0', 'fontSize': '14px'},
         )
     columns = [
-        {'name': '策略',            'id': 'strategy'},
+        {'name': '策略',            'id': 'strategy', 'presentation': 'markdown'},
         {'name': '已實現損益',       'id': 'realized_pnl'},
         {'name': '未實現損益',       'id': 'unrealized_pnl'},
         {'name': '最終淨值',         'id': 'final_nav'},
@@ -54,13 +54,17 @@ def _render_results() -> html.Div:
         {'name': 'Profit Factor',   'id': 'profit_factor'},
         {'name': 'Avg Hold (days)', 'id': 'avg_hold_days'},
     ]
+    rows = strategy_metrics_rows(_results)
+    for row in rows:
+        name = row['strategy']
+        row['strategy'] = f"[{name}](/strategy/{name})"
     return html.Div([
         html.H2('回測結果', style={'marginBottom': '16px', 'fontSize': '18px'}),
         dcc.Graph(figure=portfolio_line_chart(_results), style={'marginBottom': '24px'}),
         html.H3('策略績效指標',
                 style={'marginBottom': '8px', 'fontSize': '14px', 'opacity': '.7'}),
         dash_table.DataTable(
-            data=strategy_metrics_rows(_results),
+            data=rows,
             columns=columns,
             style_cell={'textAlign': 'left', 'padding': '8px 12px', 'fontSize': '13px'},
             style_header={'fontWeight': '600', 'opacity': '.6', 'fontSize': '11px'},
