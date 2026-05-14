@@ -14,9 +14,12 @@ def per_ticker_rows(result: BacktestResult) -> list[dict]:
         if m is None:
             continue
         label = STRATEGY_LABEL.get(tr.strategy_class, tr.strategy_class)
+        splits = getattr(tr, 'splits_applied', []) or []
+        adj_mark = f"⚠ {len(splits)}" if splits else ''
         rows.append({
             'ticker':         f"[{tr.ticker}](/stock/{tr.strategy_class}/{tr.ticker})",
             'strategy':       f"[{label}](/strategy/{tr.strategy_class})",
+            'split_adj':      adj_mark,
             'realized_pnl':   f"${m.realized_pnl:+,.0f} ({m.realized_pnl_pct:+.1%})",
             'unrealized_pnl': f"${m.unrealized_pnl:+,.0f}",
             'final_nav':      f"${m.final_nav:,.0f}",

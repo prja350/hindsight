@@ -156,9 +156,19 @@ class BacktestEngine:
                 snapshots=[(s.date, s.total) for s in daily_snapshots],
                 initial_capital=initial_capital,
             ).calculate()
+            splits_applied: list[dict] = []
+            getter = getattr(self.provider, 'get_splits_applied', None)
+            if callable(getter):
+                try:
+                    splits_applied = getter(a.ticker, start, end) or []
+                    if not isinstance(splits_applied, list):
+                        splits_applied = []
+                except Exception:
+                    splits_applied = []
             ticker_results.append(TickerResult(
                 ticker=a.ticker, strategy_class=a.strategy_class, params=a.params,
                 trades=trades, metrics=metrics, final_position=states[a.ticker].position,
+                splits_applied=splits_applied,
             ))
 
         return BacktestResult(

@@ -70,9 +70,30 @@ class DataProvider:
             merged = pd.concat([cached] + new_rows, ignore_index=True)
             merged = merged.drop_duplicates(subset=['ticker', 'date'], keep='first').reset_index(drop=True)
             self.cache.save_ohlcv(ticker, merged, source='multi')
-            return self.cache.get_ohlcv(ticker, start, end)
+            final = self.cache.get_ohlcv(ticker, start, end)
+        else:
+            final = cached if not cached.empty else None
 
-        return cached if not cached.empty else None
+        if final is None or final.empty:
+            return final
+
+        from data.splits import merged_splits, apply_splits
+        splits = merged_splits(ticker, final)
+        if splits:
+            final = apply_splits(final, splits)
+        return final
+
+    def get_splits_applied(self, ticker: str, start: date, end: date) -> list[dict]:
+        """Splits affecting [start, end] for ticker, sorted ascending."""
+        from data.splits import merged_splits
+        raw = self.cache.get_ohlcv(ticker, start, end)
+        if raw is None or raw.empty:
+            return []
+        return [
+            {'date': d.isoformat(), 'ratio': r, 'source': src}
+            for d, r, src in merged_splits(ticker, raw)
+            if start <= d <= end
+        ]
 
     def _forward_fill(self, ticker, cached_df, new_rows, missing_dates):
         parts = [cached_df] + new_rows if new_rows else [cached_df]

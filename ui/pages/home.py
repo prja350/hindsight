@@ -84,6 +84,7 @@ def _render_results():
     columns = [
         {'name': '標的', 'id': 'ticker', 'presentation': 'markdown'},
         {'name': '策略', 'id': 'strategy', 'presentation': 'markdown'},
+        {'name': '拆股調整', 'id': 'split_adj'},
         {'name': '已實現損益', 'id': 'realized_pnl'},
         {'name': '未實現損益', 'id': 'unrealized_pnl'},
         {'name': '最終淨值', 'id': 'final_nav'},

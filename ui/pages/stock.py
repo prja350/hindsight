@@ -41,10 +41,30 @@ def layout(class_name: str = '', ticker: str = '') -> html.Div:
         {'name': '持有天數', 'id': 'hold_days'},
     ]
     label = STRATEGY_LABEL.get(class_name, class_name)
-    return html.Div([
+    children = [
         html.A(f'← 返回策略 {label}', href=f'/strategy/{class_name}',
                style={'fontSize': '13px', 'opacity': '.6'}),
         html.H2(f'{ticker} — {label}', style={'margin': '12px 0 20px'}),
+    ]
+    splits = getattr(tr, 'splits_applied', []) or []
+    if splits:
+        items = []
+        for s in splits:
+            src_label = '手動表' if s.get('source') == 'manual' else '啟發式偵測'
+            items.append(html.Li(
+                f"{s.get('date')} · 比率 {float(s.get('ratio', 1)):.4g}x · 來源：{src_label}",
+                style={'marginBottom': '2px'},
+            ))
+        children.append(html.Div([
+            html.Div('⚠ 本標的已套用拆股/收益分配回溯調整 (價格、量已自動 split-adjust)',
+                     style={'fontWeight': '600', 'marginBottom': '6px'}),
+            html.Ul(items, style={'margin': 0, 'paddingLeft': '20px', 'fontSize': '12px'}),
+        ], style={
+            'background': '#fff8e1', 'border': '1px solid #f6c453',
+            'borderRadius': '6px', 'padding': '10px 14px',
+            'marginBottom': '16px', 'fontSize': '13px',
+        }))
+    children.extend([
         dcc.Graph(figure=candlestick_chart(ohlcv_df, tr.trades),
                   style={'marginBottom': '24px'}),
         html.H3('逐筆交易記錄',
@@ -54,4 +74,5 @@ def layout(class_name: str = '', ticker: str = '') -> html.Div:
             style_cell={'textAlign': 'left', 'padding': '8px 12px', 'fontSize': '13px'},
             style_header={'fontWeight': '600', 'opacity': '.6', 'fontSize': '11px'},
         ),
-    ], style={'padding': '24px 0'})
+    ])
+    return html.Div(children, style={'padding': '24px 0'})

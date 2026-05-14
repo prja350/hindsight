@@ -89,6 +89,7 @@ class TickerResult:
     trades: list[Trade] = field(default_factory=list)
     metrics: Metrics | None = None
     final_position: Position | None = None
+    splits_applied: list[dict] = field(default_factory=list)
 
 
 @dataclass
