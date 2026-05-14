@@ -17,10 +17,10 @@
 Hindsight 是台灣股票回測系統，支援自訂策略、多來源資料、SQLite 快取，以及 Dash 視覺化 UI。
 
 - **語言**：Python 3.11+
-- **UI**：Dash 2.x + Plotly
-- **資料來源**：FinMind → yfinance（後備）
-- **快取**：SQLite（本機或 Docker volume）
-- **測試**：pytest，覆蓋率 92%（58 個測試）
+- **UI**：Dash 4.x + Plotly
+- **資料來源**：FinMind → yfinance（後備）+ 拆股回溯調整
+- **快取**：SQLite（本機或 Docker volume），含 `quality_flag` 欄位
+- **測試**：pytest，105 個測試
 
 ---
 
@@ -47,13 +47,20 @@ Hindsight 是台灣股票回測系統，支援自訂策略、多來源資料、S
 ```
 hindsight/
 ├── backtest/
-│   ├── engine.py        # 每日循環、費用計算、部位快照
+│   ├── engine.py        # 每日循環、TickerAssignment、PriceContext、splits_applied
 │   ├── metrics.py       # MDD、Sharpe、勝率、獲利因子
-│   └── models.py        # Action、Position、Trade、Metrics、BacktestResult
+│   └── models.py        # Action、Position、Trade、Metrics、TickerAssignment、
+│                        # TickerState、PriceContext、DailySnapshot、TickerResult、
+│                        # BacktestResult
 ├── data/
-│   ├── cache.py         # SQLite CacheManager，TTL 分型別設定
+│   ├── cache.py         # SQLite CacheManager，含 quality_flag 欄位 + 向後相容 ALTER TABLE
+│   ├── calendar.py      # XTAI 交易日 (pandas_market_calendars + fallback)
+│   ├── calendar_fallback.py # 硬編 2024-2026 台灣假日
 │   ├── finmind.py       # FinMind SDK wrapper，欄位正規化
-│   ├── provider.py      # cache-first → FinMind → yfinance 回退
+│   ├── provider.py      # gap-fill: FinMind → yfinance → forward-fill；讀取時套用拆股
+│   ├── quality.py       # detect_gaps() — 純函式，以 trading-day 序判斷缺漏
+│   ├── splits.py        # 拆股表 (manual JSON + heuristic) + apply_splits()
+│   ├── splits_manual.json # ticker → [{date, ratio, note}] 表
 │   └── yfinance_src.py  # yfinance adapter，自動補 .TW 後綴
 ├── selection/
 │   ├── filters/         # BaseFilter ABC + PriceFilter、VolumeFilter、PERatioFilter、VolatilityFilter
@@ -61,18 +68,20 @@ hindsight/
 │   ├── random_mode.py   # RandomSelector（隨機抽 n 檔）
 │   └── semi_random.py   # SemiRandomSelector（過濾鏈 + 隨機抽）
 ├── strategy/
-│   ├── base.py          # BaseStrategy ABC
-│   └── dip_and_take_profit.py  # 逢跌加碼 + 止盈 + 強制平倉策略
+│   ├── base.py          # BaseStrategy ABC (PriceContext + TickerState)
+│   ├── pnl.py           # net_unrealized_pct/value (sell fee + tax aware)
+│   ├── dip_and_take_profit.py  # 逢跌加碼 + 止盈 + 強制平倉策略
+│   └── infinite_average_v0.py  # 無限攤平：last_sell_price 再進場、avg_cost 重設
 ├── ui/
 │   ├── app.py           # Dash 進入點，use_pages=True
 │   ├── components/
-│   │   ├── charts.py    # portfolio_line_chart、candlestick_chart、stock_overlay_chart
-│   │   └── tables.py    # strategy_metrics_rows、trades_table_rows
+│   │   ├── charts.py    # portfolio_3line_chart、normalized_price_chart、candlestick_chart
+│   │   └── tables.py    # per_ticker_rows (含 split_adj 欄)、trades_table_rows、STRATEGY_LABEL
 │   └── pages/
-│       ├── home.py      # 路由 /，投資組合走勢 + 策略績效表
-│       ├── strategy.py  # 路由 /strategy/<id>，各 ticker 績效
-│       └── stock.py     # 路由 /stock/<id>/<ticker>，K 線 + 交易紀錄
-├── tests/               # pytest 測試，58 個
+│       ├── home.py      # 路由 /，wizard + 3-line 總資產 + per-ticker 表 (含拆股調整欄)
+│       ├── strategy.py  # 路由 /strategy/<class>，normalized overlay + 該策略各 ticker 績效
+│       └── stock.py     # 路由 /stock/<class>/<ticker>，K 線 + 累計投入 + 拆股⚠ banner + 交易紀錄
+├── tests/               # pytest 測試，105 個
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
@@ -98,12 +107,23 @@ hindsight/
 - **資料品質**：`quality_flag ∈ {clean, yfinance, forward_filled}`；forward_filled 列每次讀取都重試。
 - **路由**：`/`、`/strategy/<class>`、`/stock/<class>/<ticker>`；`<class>` 採英文識別碼避免 URL encode 問題。
 - **InfiniteAverageV0**：無 max_hold_days、無 session-end 強制平倉；清空部位後依 `last_sell_price * (1 - dip_pct)` 判斷再進場，`avg_cost` 完全重設。
+- **拆股回溯調整**：`data/splits.py` 混合 manual JSON (`data/splits_manual.json`) + heuristic (consecutive close ratio outside `[1/1.5, 1.5]`)。manual 優先，heuristic ±3 天內被吃掉。`DataProvider.get_ohlcv()` 每次讀取套用 (cache 仍存 raw，新增 split 條目不需 invalidate)。`TickerResult.splits_applied` 帶 `[{date, ratio, source}]` 到 UI。
+- **UI 拆股註記**：Home per-ticker 表「拆股調整」欄顯示 `⚠ N`；Stock 頁面頂部 ⚠ banner 列出每筆 split (date, ratio, source)。
+
+### 已知資料品質限制
+
+- FinMind 自身**不做**回溯調整 — 拆股前後資料價格不連續，需依賴 `splits.py` 修正。
+- FinMind 拆股 API (`taiwan_stock_split_price`) 為付費版，免費 token 拿不到正規拆股表。
+- yfinance Taiwan ETF 拆股資訊不完整 (`Ticker(...).splits` 對 00631L 等回傳空)。
+- 故 v2 採 manual JSON 為主、heuristic 為輔；遇到新拆股事件需人工加進 `data/splits_manual.json`。
+- yfinance 與 FinMind 對部分 ETF 的價格 feed 不一致 (例如 00631L)：填補 gap 時若兩源混用會殘留尺度差異，建議遇到此類 ticker 將 manual 表覆蓋對應日期。
 
 ---
 
 ## 3. 開發流程
 
-採用 **測試驅動開發（TDD）+ Subagent-Driven** 逐 task 實作，共 18 個 task。
+採用 **測試驅動開發（TDD）+ Subagent-Driven** 逐 task 實作。
+v1：18 個 task；v2：16 個 task + 拆股回溯調整 patch。
 
 ### 開發步驟（每個 task）
 
@@ -162,39 +182,33 @@ python3 -m pytest --cov=. --cov-report=term-missing -q
 ### 測試結果
 
 ```
-58 passed in ~6s
-整體覆蓋率：92%
-
-backtest/engine.py     93%
-backtest/metrics.py    96%
-backtest/models.py    100%
-data/cache.py          96%
-data/finmind.py        73%   （FinMind SDK 本身無法 unit test 完整覆蓋）
-data/provider.py       72%   （同上，部分路徑需真實 API）
-data/yfinance_src.py   89%
-selection/filters/*   62-100%
-selection/manual.py   100%
-selection/random_mode.py  100%
-selection/semi_random.py   92%
-strategy/*            100%
+105 passed
 ```
 
 ### 測試檔案對應
 
-| 測試檔案 | 測試項目 | 數量 |
-|---------|---------|------|
-| `tests/backtest/test_models.py` | Action、Position、Trade、Metrics dataclass 欄位 | 5 |
-| `tests/backtest/test_metrics.py` | 勝率、獲利因子、MDD、Sharpe、平均持有天數 | 6 |
-| `tests/backtest/test_engine.py` | 買入記錄、手續費計算、日快照、metrics 產出 | 5 |
-| `tests/data/test_cache.py` | OHLCV / fundamentals / ticker_list CRUD + TTL | 8 |
-| `tests/data/test_finmind.py` | 欄位正規化、空資料回傳 | 4 |
-| `tests/data/test_yfinance.py` | 欄位正規化、.TW 後綴、空資料 | 3 |
-| `tests/data/test_provider.py` | cache hit、FinMind→yfinance fallback、cache miss | 5 |
-| `tests/selection/test_filters.py` | PriceFilter、VolumeFilter、PERatioFilter、VolatilityFilter、鏈式過濾 | 6 |
-| `tests/selection/test_modes.py` | ManualSelector、RandomSelector（n 上限）、SemiRandomSelector | 6 |
-| `tests/strategy/test_base.py` | BaseStrategy 繼承、`on_session_end` 預設回 HOLD | 2 |
-| `tests/strategy/test_dip_and_take_profit.py` | 初始買入、持倉穩定 HOLD、逢跌加碼、達上限不加碼、止盈、強制平倉 | 7 |
-| `tests/test_smoke.py` | 所有層可正常 import | 1 |
+| 測試檔案 | 測試項目 |
+|---------|---------|
+| `tests/backtest/test_models.py` | v2 dataclasses：Action、Position、Trade、Metrics、TickerAssignment、TickerState、PriceContext、DailySnapshot、TickerResult、BacktestResult |
+| `tests/backtest/test_metrics.py` | 勝率、獲利因子、MDD、Sharpe、平均持有天數 |
+| `tests/backtest/test_engine_v2.py` | per-ticker assignments、execution_price、cash/pos snapshots、shared capital、InfiniteAverageV0 re-entry |
+| `tests/data/test_calendar.py` | XTAI 交易日 + 硬編 fallback |
+| `tests/data/test_quality.py` | detect_gaps 純函式 |
+| `tests/data/test_cache.py` | OHLCV CRUD + TTL + `quality_flag` 欄位 + ALTER TABLE 向後相容 |
+| `tests/data/test_finmind.py` | 欄位正規化、空資料 |
+| `tests/data/test_yfinance.py` | 欄位正規化、.TW 後綴 |
+| `tests/data/test_provider.py` | cache hit、gap-fill 鏈、forward_fill、UNIQUE PK regression |
+| `tests/data/test_splits.py` | manual JSON + heuristic + apply_splits 計算、merged 優先序 |
+| `tests/selection/test_filters.py` | PriceFilter、VolumeFilter、PERatioFilter、VolatilityFilter |
+| `tests/selection/test_modes.py` | Manual / Random / Semi 選股 |
+| `tests/strategy/test_base.py` | BaseStrategy ABC、`on_session_end` 預設 HOLD |
+| `tests/strategy/test_pnl.py` | net_unrealized_pct/value (fee + tax aware) |
+| `tests/strategy/test_dip_and_take_profit.py` | 初買、加碼、止盈、強制平倉、達部位上限 |
+| `tests/strategy/test_infinite_average_v0.py` | 初買、無 last_sell 持有、再進場條件、加碼、止盈、session-end HOLD |
+| `tests/ui/test_charts.py` | 3-line portfolio、normalized overlay、candlestick + invested overlay |
+| `tests/ui/test_home_layout.py` | initial-capital / exec-price / 預設日期 |
+| `tests/test_smoke.py` | 所有層可正常 import |
+| `tests/test_smoke_v2.py` | 2 ticker × 2 strategy 端對端 |
 
 ### 只跑單一模組
 
@@ -285,7 +299,9 @@ print('container OK')
 
 ## 7. 已知限制
 
-- **UI 無資料注入介面**：`ui/pages/home.py` 的 `set_results()` 需在程式碼層呼叫，尚未有 web 表單觸發回測。
-- **FinMind 覆蓋率較低**（73%）：SDK 本身的網路呼叫路徑不易在 unit test 完整覆蓋，需整合測試。
+- **FinMind 覆蓋率較低**：SDK 本身的網路呼叫路徑不易在 unit test 完整覆蓋，需整合測試。
 - **yfinance 備援無 fundamentals**：yfinance adapter 只實作 OHLCV；PE/PB 資料目前僅 FinMind 提供。
 - **無認證機制**：服務直接暴露，不適合直接部署在公開網路。
+- **拆股表需人工維護**：FinMind 拆股 API 為付費版；yfinance 對 Taiwan ETF 拆股不完整。遇到新拆股事件需編輯 `data/splits_manual.json`。Heuristic 偵測 (close ratio 變化 ≥ 50%) 為輔，可能誤判真實大跌；建議將確認過的事件升級為 manual 條目。
+- **多源價格 feed 不一致**：FinMind 與 yfinance 對部分 ETF (例如 00631L) 提供完全不同尺度的價格序列，gap-fill 時混用會產生不連續資料。建議該類 ticker 在 manual 表覆蓋對應日期。
+- **快取無自動失效**：拆股調整在讀取時套用，cache 仍存 raw，所以新增 split 條目會自動生效；但 ticker 重新命名 / 下市等罕見事件目前無清理機制。
