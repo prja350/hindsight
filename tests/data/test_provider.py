@@ -43,3 +43,49 @@ def test_get_ticker_list_uses_cache(provider, sample_ticker_list_df):
     result = provider.get_ticker_list()
     assert result is not None
     assert len(result) == 3
+
+
+def test_forward_fill_when_no_data_available(tmp_path, monkeypatch):
+    from datetime import date
+    import pandas as pd
+    from data.provider import DataProvider
+
+    monkeypatch.setattr('data.finmind.FinMindAdapter.fetch_ohlcv',
+                        lambda self, t, s, e: pd.DataFrame())
+    monkeypatch.setattr('data.yfinance_src.YFinanceAdapter.fetch_ohlcv',
+                        lambda self, t, s, e: pd.DataFrame())
+
+    provider = DataProvider(cache_dir=str(tmp_path))
+    seed = pd.DataFrame([{
+        'ticker': '2330', 'date': '2025-01-02',
+        'open': 600, 'high': 605, 'low': 595, 'close': 600, 'volume': 1000,
+        'quality_flag': 'clean',
+    }])
+    provider.cache.save_ohlcv('2330', seed, source='finmind')
+
+    out = provider.get_ohlcv('2330', date(2025, 1, 2), date(2025, 1, 3))
+    assert out is not None
+    rows = out[out['date'] == '2025-01-03']
+    assert not rows.empty
+    assert rows.iloc[0]['quality_flag'] == 'forward_filled'
+    assert rows.iloc[0]['close'] == 600
+
+
+def test_yfinance_fallback_marks_quality_flag(tmp_path, monkeypatch):
+    from datetime import date
+    import pandas as pd
+    from data.provider import DataProvider
+
+    yf_data = pd.DataFrame([
+        {'ticker': '2330', 'date': '2025-01-02', 'open': 600, 'high': 605,
+         'low': 595, 'close': 600, 'volume': 1000},
+    ])
+    monkeypatch.setattr('data.finmind.FinMindAdapter.fetch_ohlcv',
+                        lambda self, t, s, e: pd.DataFrame())
+    monkeypatch.setattr('data.yfinance_src.YFinanceAdapter.fetch_ohlcv',
+                        lambda self, t, s, e: yf_data.copy())
+
+    provider = DataProvider(cache_dir=str(tmp_path))
+    out = provider.get_ohlcv('2330', date(2025, 1, 2), date(2025, 1, 2))
+    assert out is not None
+    assert (out['quality_flag'] == 'yfinance').all()
