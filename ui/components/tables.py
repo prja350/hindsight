@@ -1,15 +1,22 @@
 from __future__ import annotations
 from backtest.models import BacktestResult, Trade
 
+STRATEGY_LABEL = {
+    'dip_and_take_profit': '逢跌加碼止盈',
+    'infinite_average_v0': '無限攤平_V0',
+}
 
-def strategy_metrics_rows(results: list[BacktestResult]) -> list[dict]:
+
+def per_ticker_rows(result: BacktestResult) -> list[dict]:
     rows = []
-    for r in results:
-        m = r.metrics
+    for tr in result.ticker_results:
+        m = tr.metrics
         if m is None:
             continue
+        label = STRATEGY_LABEL.get(tr.strategy_class, tr.strategy_class)
         rows.append({
-            'strategy':       r.strategy_name,
+            'ticker':         f"[{tr.ticker}](/stock/{tr.strategy_class}/{tr.ticker})",
+            'strategy':       f"[{label}](/strategy/{tr.strategy_class})",
             'realized_pnl':   f"${m.realized_pnl:+,.0f} ({m.realized_pnl_pct:+.1%})",
             'unrealized_pnl': f"${m.unrealized_pnl:+,.0f}",
             'final_nav':      f"${m.final_nav:,.0f}",
@@ -31,4 +38,5 @@ def trades_table_rows(trades: list[Trade]) -> list[dict]:
         'amount':      f"${t.amount:,.0f}",
         'fee_tax':     f"${t.fee + t.tax:,.0f}",
         'realized_pnl': f"${t.realized_pnl:+,.0f}" if t.realized_pnl is not None else '—',
+        'hold_days':   t.hold_days if t.hold_days is not None else '—',
     } for t in trades]

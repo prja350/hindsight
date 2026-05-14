@@ -6,21 +6,20 @@ from strategy.pnl import net_unrealized_pct
 
 
 @dataclass
-class DipAndTakeProfitStrategy(BaseStrategy):
+class InfiniteAverageV0Strategy(BaseStrategy):
     dip_pct: float
     take_profit_pct: float
     add_amount: float
     max_position: float
-    max_hold_days: int
 
     def on_price_update(self, ctx: PriceContext, state: TickerState) -> Action:
         pos = state.position
         if pos is None:
-            return Action(type="BUY", amount=self.add_amount)
-
-        hold_days = (ctx.date - pos.entry_date).days
-        if hold_days >= self.max_hold_days:
-            return Action(type="SELL")
+            if state.last_sell_price is None:
+                return Action(type="BUY", amount=self.add_amount)
+            if ctx.price <= state.last_sell_price * (1 - self.dip_pct):
+                return Action(type="BUY", amount=self.add_amount)
+            return Action(type="HOLD")
 
         pnl_pct = net_unrealized_pct(state, ctx.price)
         if pnl_pct >= self.take_profit_pct:

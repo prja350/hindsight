@@ -1,60 +1,132 @@
 from __future__ import annotations
-import plotly.graph_objects as go
 import pandas as pd
-from backtest.models import BacktestResult, Trade
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from backtest.models import DailySnapshot, Trade
 
 
-def portfolio_line_chart(results: list[BacktestResult]) -> go.Figure:
+def portfolio_3line_chart(snaps: list[DailySnapshot]) -> go.Figure:
+    if not snaps:
+        return go.Figure()
+    dates = [s.date for s in snaps]
     fig = go.Figure()
-    for r in results:
-        if not r.daily_snapshots:
-            continue
-        dates  = [s[0] for s in r.daily_snapshots]
-        values = [s[1] for s in r.daily_snapshots]
-        fig.add_trace(go.Scatter(
-            x=dates, y=values, mode='lines', name=r.strategy_name,
-            hovertemplate='%{x}<br>淨值: $%{y:,.0f}<extra></extra>',
-        ))
-    fig.update_layout(xaxis_title='日期', yaxis_title='倉位淨值（元）',
-                      hovermode='x unified', margin=dict(l=40, r=20, t=30, b=40))
+    fig.add_trace(go.Scatter(x=dates, y=[s.cash for s in snaps],
+                             mode='lines', name='現金',
+                             line=dict(color='#2e7d32', width=1.5)))
+    fig.add_trace(go.Scatter(x=dates, y=[s.position_value for s in snaps],
+                             mode='lines', name='部位市值',
+                             line=dict(color='#1976d2', width=1.5)))
+    fig.add_trace(go.Scatter(x=dates, y=[s.total for s in snaps],
+                             mode='lines', name='總資產',
+                             line=dict(color='#212121', width=2.5)))
+    fig.update_layout(
+        height=380, margin=dict(t=20, b=30, l=40, r=20),
+        legend=dict(orientation='h', y=1.05),
+        yaxis=dict(title='NTD', tickformat=','),
+    )
     return fig
 
 
-def candlestick_chart(ohlcv_df: pd.DataFrame, trades: list[Trade]) -> go.Figure:
-    fig = go.Figure(data=[go.Candlestick(
-        x=ohlcv_df['date'] if not ohlcv_df.empty else [],
-        open=ohlcv_df['open'] if not ohlcv_df.empty else [],
-        high=ohlcv_df['high'] if not ohlcv_df.empty else [],
-        low=ohlcv_df['low']   if not ohlcv_df.empty else [],
-        close=ohlcv_df['close'] if not ohlcv_df.empty else [],
-        name='K線',
-        increasing_line_color='#ef4444',
-        decreasing_line_color='#22c55e',
-    )])
-    for t in trades:
-        is_buy = t.action == 'BUY'
-        fig.add_annotation(
-            x=t.date.isoformat(), y=t.price,
-            text='▲' if is_buy else '▼', showarrow=True, arrowhead=2,
-            arrowcolor='#10b981' if is_buy else '#ef4444',
-            font=dict(color='#10b981' if is_buy else '#ef4444', size=14),
-            yshift=10 if is_buy else -10,
-        )
-    fig.update_layout(xaxis_rangeslider_visible=False,
-                      margin=dict(l=40, r=20, t=30, b=40))
+def normalized_price_chart(ohlcv_map: dict[str, pd.DataFrame]) -> go.Figure:
+    fig = go.Figure()
+    for ticker, df in ohlcv_map.items():
+        if df is None or df.empty:
+            continue
+        df = df.sort_values('date').reset_index(drop=True)
+        base = float(df.iloc[0]['close'])
+        if base == 0:
+            continue
+        fig.add_trace(go.Scatter(
+            x=df['date'].tolist(),
+            y=(df['close'] / base).tolist(),
+            mode='lines', name=ticker,
+        ))
+    fig.update_layout(
+        height=360, margin=dict(t=20, b=30, l=40, r=20),
+        yaxis=dict(title='Normalized (base=1.0)'),
+        legend=dict(orientation='h', y=1.05),
+    )
+    return fig
+
+
+def candlestick_chart(ohlcv: pd.DataFrame, trades: list[Trade]) -> go.Figure:
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        row_heights=[0.7, 0.3], vertical_spacing=0.05,
+                        subplot_titles=('K 線', '累計投入'))
+
+    if ohlcv is not None and not ohlcv.empty:
+        fig.add_trace(go.Candlestick(
+            x=ohlcv['date'], open=ohlcv['open'], high=ohlcv['high'],
+            low=ohlcv['low'], close=ohlcv['close'], name='K',
+            increasing_line_color='#d32f2f', decreasing_line_color='#388e3c',
+        ), row=1, col=1)
+
+        if 'quality_flag' in ohlcv.columns:
+            ff = ohlcv[ohlcv['quality_flag'] == 'forward_filled']
+            for d in ff['date']:
+                fig.add_vrect(x0=d, x1=d, fillcolor='#cccccc', opacity=0.3,
+                              line_width=0, row=1, col=1)
+
+    buys = [t for t in trades if t.action == 'BUY']
+    sells = [t for t in trades if t.action == 'SELL']
+    first_buy = buys[:1]
+    add_buys = buys[1:]
+    if first_buy:
+        fig.add_trace(go.Scatter(
+            x=[t.date for t in first_buy], y=[t.price for t in first_buy],
+            mode='markers', name='買入',
+            marker=dict(symbol='triangle-up', color='#1976d2', size=12),
+        ), row=1, col=1)
+    if add_buys:
+        fig.add_trace(go.Scatter(
+            x=[t.date for t in add_buys], y=[t.price for t in add_buys],
+            mode='markers', name='加碼',
+            marker=dict(symbol='triangle-up', color='#64b5f6', size=10,
+                        line=dict(color='#1976d2', width=1)),
+        ), row=1, col=1)
+    if sells:
+        fig.add_trace(go.Scatter(
+            x=[t.date for t in sells], y=[t.price for t in sells],
+            mode='markers', name='賣出',
+            marker=dict(symbol='triangle-down', color='#f57c00', size=12),
+        ), row=1, col=1)
+
+    if trades and ohlcv is not None and not ohlcv.empty:
+        dates_sorted = sorted({d for d in ohlcv['date'].tolist()})
+        trade_by_date: dict[str, list[Trade]] = {}
+        for t in trades:
+            trade_by_date.setdefault(t.date.isoformat(), []).append(t)
+        invested = 0.0
+        series_x, series_y = [], []
+        for d in dates_sorted:
+            for t in trade_by_date.get(d, []):
+                if t.action == 'BUY':
+                    invested += t.amount + t.fee
+                elif t.action == 'SELL':
+                    invested = 0.0
+            series_x.append(d); series_y.append(invested)
+        fig.add_trace(go.Scatter(
+            x=series_x, y=series_y, mode='lines', name='累計投入',
+            line=dict(color='#7b1fa2', width=2),
+        ), row=2, col=1)
+
+    fig.update_layout(
+        height=600, margin=dict(t=40, b=30, l=40, r=20),
+        legend=dict(orientation='h', y=1.05),
+        xaxis_rangeslider_visible=False,
+    )
     return fig
 
 
 def stock_overlay_chart(ohlcv_map: dict[str, pd.DataFrame]) -> go.Figure:
-    fig = go.Figure()
-    for ticker, df in ohlcv_map.items():
-        if df.empty:
-            continue
-        base = df['close'].iloc[0]
-        fig.add_trace(go.Scatter(
-            x=df['date'], y=df['close'] / base, mode='lines', name=ticker,
-            hovertemplate=f'{ticker}<br>%{{x}}<br>%{{y:.3f}}x<extra></extra>',
-        ))
-    fig.update_layout(yaxis_title='標準化報酬 (1.0 = 起始)',
-                      hovermode='x unified', margin=dict(l=40, r=20, t=30, b=40))
-    return fig
+    return normalized_price_chart(ohlcv_map)
+
+
+def portfolio_line_chart(results) -> go.Figure:
+    if not results:
+        return go.Figure()
+    r = results[0] if isinstance(results, list) else results
+    if hasattr(r, 'daily_snapshots'):
+        return portfolio_3line_chart(r.daily_snapshots)
+    return go.Figure()

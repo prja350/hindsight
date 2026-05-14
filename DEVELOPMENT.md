@@ -89,6 +89,16 @@ hindsight/
 | 初始買入信號 | `position=None` 時策略回傳 BUY；engine 計算 `shares = floor(amount / price)` |
 | 加碼均價 | `avg_cost = total_invested / total_shares` |
 
+### v2 設計重點
+
+- **每檔指派**：`BacktestEngine.run(assignments: list[TickerAssignment])` — 每檔 ticker 各自設定 strategy class + params。
+- **共用資金池**：整個回測共享單一 cash float，跨 ticker 競爭資金。
+- **執行價**：`close | open | vwap`，整輪回測統一設定一次。
+- **淨未實現損益**：`(shares × price × (1-sell_fee-tax)) − total_invested`。策略觸發與 UI 顯示皆採此公式。
+- **資料品質**：`quality_flag ∈ {clean, yfinance, forward_filled}`；forward_filled 列每次讀取都重試。
+- **路由**：`/`、`/strategy/<class>`、`/stock/<class>/<ticker>`；`<class>` 採英文識別碼避免 URL encode 問題。
+- **InfiniteAverageV0**：無 max_hold_days、無 session-end 強制平倉；清空部位後依 `last_sell_price * (1 - dip_pct)` 判斷再進場，`avg_cost` 完全重設。
+
 ---
 
 ## 3. 開發流程
