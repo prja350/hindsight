@@ -89,3 +89,32 @@ def test_yfinance_fallback_marks_quality_flag(tmp_path, monkeypatch):
     out = provider.get_ohlcv('2330', date(2025, 1, 2), date(2025, 1, 2))
     assert out is not None
     assert (out['quality_flag'] == 'yfinance').all()
+
+
+def test_overlapping_finmind_and_yfinance_does_not_violate_unique_pk(tmp_path, monkeypatch):
+    """Regression: both adapters returning the same dates must not cause SQLite
+    UNIQUE constraint failure on (ticker, date)."""
+    from datetime import date
+    import pandas as pd
+    from data.provider import DataProvider
+
+    rows = [
+        {'ticker': '00631L', 'date': '2026-01-02', 'open': 100, 'high': 105,
+         'low': 95, 'close': 100, 'volume': 1000},
+        {'ticker': '00631L', 'date': '2026-01-05', 'open': 102, 'high': 108,
+         'low': 100, 'close': 105, 'volume': 1200},
+    ]
+    fm_df = pd.DataFrame(rows)
+    yf_df = pd.DataFrame(rows)
+
+    monkeypatch.setattr('data.finmind.FinMindAdapter.fetch_ohlcv',
+                        lambda self, t, s, e: fm_df.copy())
+    monkeypatch.setattr('data.yfinance_src.YFinanceAdapter.fetch_ohlcv',
+                        lambda self, t, s, e: yf_df.copy())
+
+    provider = DataProvider(cache_dir=str(tmp_path))
+    out = provider.get_ohlcv('00631L', date(2026, 1, 2), date(2026, 1, 5))
+    assert out is not None
+    assert len(out) == 2
+    assert out['date'].is_unique
+    assert (out['quality_flag'] == 'clean').all()

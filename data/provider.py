@@ -38,21 +38,28 @@ class DataProvider:
         new_rows: list[pd.DataFrame] = []
 
         for gap_start, gap_end in gaps:
+            gap_dates_iso = {d.isoformat() for d in expected if gap_start <= d <= gap_end}
+
             fm = self.finmind.fetch_ohlcv(ticker, gap_start, gap_end)
             covered: set[str] = set()
             if fm is not None and not fm.empty:
-                fm = fm.assign(quality_flag='clean')
-                new_rows.append(fm)
-                covered = set(fm['date'].astype(str).tolist())
+                fm = fm[fm['date'].astype(str).isin(gap_dates_iso)].copy()
+                if not fm.empty:
+                    fm = fm.assign(quality_flag='clean')
+                    new_rows.append(fm)
+                    covered = set(fm['date'].astype(str).tolist())
 
             remaining = [d for d in expected
                          if gap_start <= d <= gap_end and d.isoformat() not in covered]
             if remaining:
+                remaining_iso = {d.isoformat() for d in remaining}
                 yf = self.yfinance.fetch_ohlcv(ticker, gap_start, gap_end)
                 if yf is not None and not yf.empty:
-                    yf = yf.assign(quality_flag='yfinance')
-                    new_rows.append(yf)
-                    covered |= set(yf['date'].astype(str).tolist())
+                    yf = yf[yf['date'].astype(str).isin(remaining_iso)].copy()
+                    if not yf.empty:
+                        yf = yf.assign(quality_flag='yfinance')
+                        new_rows.append(yf)
+                        covered |= set(yf['date'].astype(str).tolist())
                 still_missing = [d for d in remaining if d.isoformat() not in covered]
                 if still_missing:
                     fill = self._forward_fill(ticker, cached, new_rows, still_missing)
@@ -61,6 +68,7 @@ class DataProvider:
 
         if new_rows:
             merged = pd.concat([cached] + new_rows, ignore_index=True)
+            merged = merged.drop_duplicates(subset=['ticker', 'date'], keep='first').reset_index(drop=True)
             self.cache.save_ohlcv(ticker, merged, source='multi')
             return self.cache.get_ohlcv(ticker, start, end)
 
