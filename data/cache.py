@@ -29,6 +29,7 @@ class CacheManager:
                 CREATE TABLE IF NOT EXISTS ohlcv (
                     ticker TEXT, date TEXT,
                     open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+                    quality_flag TEXT NOT NULL DEFAULT 'clean',
                     PRIMARY KEY (ticker, date)
                 );
                 CREATE TABLE IF NOT EXISTS fundamentals (
@@ -46,6 +47,12 @@ class CacheManager:
                     market TEXT, listed_date TEXT
                 );
             """)
+            try:
+                conn.execute(
+                    "ALTER TABLE ohlcv ADD COLUMN quality_flag TEXT NOT NULL DEFAULT 'clean'"
+                )
+            except sqlite3.OperationalError:
+                pass
 
     def is_fresh(self, ticker: str, data_type: str) -> bool:
         with self._conn() as conn:
@@ -80,7 +87,10 @@ class CacheManager:
     def save_ohlcv(self, ticker: str, df: pd.DataFrame, source: str) -> None:
         if df.empty:
             return
-        df = df[['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']].copy()
+        df = df.copy()
+        if 'quality_flag' not in df.columns:
+            df['quality_flag'] = 'clean'
+        df = df[['ticker', 'date', 'open', 'high', 'low', 'close', 'volume', 'quality_flag']].copy()
         df['ticker'] = ticker
         with self._conn() as conn:
             conn.execute(

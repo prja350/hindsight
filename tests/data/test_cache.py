@@ -55,3 +55,46 @@ def test_is_fresh_after_save(cache, sample_ohlcv_df):
     assert not cache.is_fresh("2330", "ohlcv")
     cache.save_ohlcv("2330", sample_ohlcv_df, source="finmind")
     assert cache.is_fresh("2330", "ohlcv")
+
+
+def test_ohlcv_has_quality_flag_column(cache):
+    with cache._conn() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(ohlcv)").fetchall()]
+    assert "quality_flag" in cols
+
+
+def test_save_with_quality_flag(cache, sample_ohlcv_df):
+    df = sample_ohlcv_df.copy()
+    df["quality_flag"] = ["clean", "clean", "yfinance", "forward_filled", "clean"]
+    cache.save_ohlcv("2330", df, source="finmind")
+    result = cache.get_ohlcv("2330", date(2023, 1, 3), date(2023, 1, 9))
+    assert result is not None
+    assert "quality_flag" in result.columns
+    flags = result.sort_values("date")["quality_flag"].tolist()
+    assert flags == ["clean", "clean", "yfinance", "forward_filled", "clean"]
+
+
+def test_save_default_quality_flag_when_missing(cache, sample_ohlcv_df):
+    cache.save_ohlcv("2330", sample_ohlcv_df, source="finmind")
+    result = cache.get_ohlcv("2330", date(2023, 1, 3), date(2023, 1, 9))
+    assert result is not None
+    assert (result["quality_flag"] == "clean").all()
+
+
+def test_legacy_db_migrates_quality_flag(tmp_path):
+    """CacheManager opening a pre-existing db without quality_flag column adds it."""
+    import sqlite3
+    db = tmp_path / "legacy.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript("""
+            CREATE TABLE ohlcv (
+                ticker TEXT, date TEXT,
+                open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+                PRIMARY KEY (ticker, date)
+            );
+            INSERT INTO ohlcv VALUES ('2330', '2023-01-03', 500.0, 510.0, 498.0, 505.0, 1500000);
+        """)
+    cache = CacheManager(db_path=str(db))
+    with cache._conn() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(ohlcv)").fetchall()]
+    assert "quality_flag" in cols
