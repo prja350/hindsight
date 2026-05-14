@@ -1,19 +1,21 @@
+from __future__ import annotations
 from datetime import date
-from backtest.models import Action, Position
+from backtest.models import Action, PriceContext, TickerState
 from strategy.base import BaseStrategy
 
 
-class AlwaysBuyStrategy(BaseStrategy):
-    def on_price_update(self, dt: date, price: float, position: Position | None) -> Action:
-        return Action(type="BUY", amount=10_000.0)
+class _HoldAlways(BaseStrategy):
+    def on_price_update(self, ctx, state):
+        return Action(type="HOLD")
 
 
-def test_subclass_returns_buy():
-    s = AlwaysBuyStrategy()
-    action = s.on_price_update(date(2023, 1, 3), 500.0, None)
-    assert action.type == "BUY"
+def test_signature_takes_ctx_and_state():
+    s = _HoldAlways()
+    ctx = PriceContext(date(2025, 1, 2), 100, 100, 100, 100, 'clean')
+    st = TickerState()
+    assert s.on_price_update(ctx, st).type == "HOLD"
 
 
-def test_default_session_end_returns_hold():
-    s = AlwaysBuyStrategy()
-    assert s.on_session_end(None).type == "HOLD"
+def test_session_end_default_hold():
+    s = _HoldAlways()
+    assert s.on_session_end(TickerState()).type == "HOLD"

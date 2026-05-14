@@ -1,12 +1,12 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from datetime import date
-from backtest.models import Action, Position
+from backtest.models import Action, PriceContext, TickerState
 
 
 class BaseStrategy(ABC):
     @abstractmethod
-    def on_price_update(self, dt: date, price: float, position: Position | None) -> Action: ...
+    def on_price_update(self, ctx: PriceContext, state: TickerState) -> Action:
+        ...
 
-    def on_session_end(self, position: Position | None) -> Action:
+    def on_session_end(self, state: TickerState) -> Action:
         return Action(type="HOLD")
