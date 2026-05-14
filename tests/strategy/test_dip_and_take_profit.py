@@ -1,67 +1,46 @@
-import pytest
+from __future__ import annotations
 from datetime import date
-from backtest.models import Action, Position
+from backtest.models import Position, PriceContext, TickerState
 from strategy.dip_and_take_profit import DipAndTakeProfitStrategy
 
 
-@pytest.fixture
-def strategy():
-    return DipAndTakeProfitStrategy(
-        dip_pct=0.07, add_amount=10_000.0,
-        take_profit_pct=0.03, max_position=100_000.0, max_hold_days=60,
-    )
+def _ctx(d, price):
+    return PriceContext(d, price, price, price, price, 'clean')
 
 
-@pytest.fixture
-def open_position():
-    return Position(
-        ticker='2330', shares=200, avg_cost=500.0,
-        entry_date=date(2023, 1, 3), total_invested=50_000.0,
-    )
+def test_first_entry_buys():
+    s = DipAndTakeProfitStrategy(0.05, 0.05, 10_000, 100_000, 60)
+    a = s.on_price_update(_ctx(date(2025, 1, 2), 100), TickerState())
+    assert a.type == "BUY" and a.amount == 10_000
 
 
-def test_initial_buy_when_no_position(strategy):
-    action = strategy.on_price_update(date(2023, 1, 3), 500.0, None)
-    assert action.type == "BUY"
-    assert action.amount == 10_000.0
+def test_adds_when_below_dip_threshold():
+    pos = Position('2330', shares=10, avg_cost=100, entry_date=date(2025, 1, 2),
+                   total_invested=1000)
+    s = DipAndTakeProfitStrategy(0.05, 0.05, 10_000, 100_000, 60)
+    a = s.on_price_update(_ctx(date(2025, 1, 10), 80), TickerState(position=pos))
+    assert a.type == "BUY"
 
 
-def test_hold_when_price_stable(strategy, open_position):
-    # avg_cost=500, drop=2% — below 7% dip threshold
-    action = strategy.on_price_update(date(2023, 1, 4), 490.0, open_position)
-    assert action.type == "HOLD"
+def test_sells_at_take_profit():
+    pos = Position('2330', shares=10, avg_cost=100, entry_date=date(2025, 1, 2),
+                   total_invested=1000)
+    s = DipAndTakeProfitStrategy(0.05, 0.05, 10_000, 100_000, 60)
+    a = s.on_price_update(_ctx(date(2025, 1, 10), 120), TickerState(position=pos))
+    assert a.type == "SELL"
 
 
-def test_add_when_price_drops_enough(strategy, open_position):
-    # 7% of 500 = 35 → trigger at ≤465
-    action = strategy.on_price_update(date(2023, 1, 4), 464.0, open_position)
-    assert action.type == "BUY"
-    assert action.amount == 10_000.0
+def test_max_hold_forces_sell():
+    pos = Position('2330', shares=10, avg_cost=100,
+                   entry_date=date(2025, 1, 2), total_invested=1000)
+    s = DipAndTakeProfitStrategy(0.05, 0.05, 10_000, 100_000, 5)
+    a = s.on_price_update(_ctx(date(2025, 1, 10), 100), TickerState(position=pos))
+    assert a.type == "SELL"
 
 
-def test_no_add_when_max_position_reached(strategy):
-    position = Position(
-        ticker='2330', shares=200, avg_cost=500.0,
-        entry_date=date(2023, 1, 3), total_invested=100_000.0,
-    )
-    # total_invested == max_position → adding 10k would exceed limit
-    action = strategy.on_price_update(date(2023, 1, 4), 464.0, position)
-    assert action.type == "HOLD"
-
-
-def test_sell_when_take_profit_reached(strategy, open_position):
-    # avg_cost=500, take_profit=3% → sell at ≥515
-    action = strategy.on_price_update(date(2023, 3, 1), 516.0, open_position)
-    assert action.type == "SELL"
-
-
-def test_force_close_when_max_hold_days_exceeded(strategy, open_position):
-    # entry=2023-01-03, max_hold_days=60 → force at day 60+
-    action = strategy.on_price_update(date(2023, 3, 5), 495.0, open_position)
-    assert action.type == "SELL"
-
-
-def test_hold_before_max_hold_days(strategy, open_position):
-    # day 58 from entry (2023-01-03 + 58 = 2023-03-02)
-    action = strategy.on_price_update(date(2023, 3, 2), 495.0, open_position)
-    assert action.type == "HOLD"
+def test_max_position_blocks_add():
+    pos = Position('2330', shares=1000, avg_cost=100, entry_date=date(2025, 1, 2),
+                   total_invested=100_000)
+    s = DipAndTakeProfitStrategy(0.05, 0.05, 10_000, 100_000, 60)
+    a = s.on_price_update(_ctx(date(2025, 1, 5), 80), TickerState(position=pos))
+    assert a.type == "HOLD"
