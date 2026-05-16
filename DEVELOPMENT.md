@@ -106,7 +106,7 @@ hindsight/
 - **淨未實現損益**：`(shares × price × (1-sell_fee-tax)) − total_invested`。策略觸發與 UI 顯示皆採此公式。
 - **資料品質**：`quality_flag ∈ {clean, yfinance, forward_filled}`；forward_filled 列每次讀取都重試。
 - **路由**：`/`、`/strategy/<class>`、`/stock/<class>/<ticker>`；`<class>` 採英文識別碼避免 URL encode 問題。
-- **InfiniteAverageV0**：無 max_hold_days、無 session-end 強制平倉；清空部位後依 `last_sell_price * (1 - dip_pct)` 判斷再進場，`avg_cost` 完全重設。
+- **InfiniteAverageV0**：無 max_hold_days、無 session-end 強制平倉；**出場後隔天無條件再進場** (移除原 `last_sell_price * (1 - dip_pct)` 價格 gate)，`avg_cost` 完全重設。`TickerState.last_sell_price` 仍由 engine 記錄但策略不再讀取。
 - **拆股回溯調整**：`data/splits.py` 混合 manual JSON (`data/splits_manual.json`) + heuristic (consecutive close ratio outside `[1/1.5, 1.5]`)。manual 優先，heuristic ±3 天內被吃掉。`DataProvider.get_ohlcv()` 每次讀取套用 (cache 仍存 raw，新增 split 條目不需 invalidate)。`TickerResult.splits_applied` 帶 `[{date, ratio, source}]` 到 UI。
 - **UI 拆股註記**：Home per-ticker 表「拆股調整」欄顯示 `⚠ N`；Stock 頁面頂部 ⚠ banner 列出每筆 split (date, ratio, source)。
 

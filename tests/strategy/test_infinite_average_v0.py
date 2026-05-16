@@ -14,17 +14,19 @@ def test_first_entry_when_no_position_no_last_sell():
     assert a.type == "BUY" and a.amount == 10_000
 
 
-def test_no_entry_when_last_sell_drop_below_threshold():
+def test_reentry_unconditional_after_sell_above_last_price():
+    """Position cleared + last_sell tracked: still re-enters even if price > last_sell."""
+    s = InfiniteAverageV0Strategy(0.05, 0.05, 10_000, 100_000)
+    st = TickerState(position=None, last_sell_price=100)
+    a = s.on_price_update(_ctx(date(2025, 1, 5), 110), st)
+    assert a.type == "BUY" and a.amount == 10_000
+
+
+def test_reentry_unconditional_after_sell_below_last_price():
+    """Re-entry ignores any dip_pct gate against last_sell_price."""
     s = InfiniteAverageV0Strategy(0.05, 0.05, 10_000, 100_000)
     st = TickerState(position=None, last_sell_price=100)
     a = s.on_price_update(_ctx(date(2025, 1, 5), 98), st)
-    assert a.type == "HOLD"
-
-
-def test_reentry_when_drop_meets_threshold():
-    s = InfiniteAverageV0Strategy(0.05, 0.05, 10_000, 100_000)
-    st = TickerState(position=None, last_sell_price=100)
-    a = s.on_price_update(_ctx(date(2025, 1, 5), 95), st)
     assert a.type == "BUY"
 
 

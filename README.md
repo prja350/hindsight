@@ -19,7 +19,7 @@ docker compose up
 ## Strategies
 
 - `dip_and_take_profit` — buys on drop ≥ dip_pct, sells on take-profit or max-hold-days
-- `infinite_average_v0` — continuous averaging-down; re-entry after sell when price drops ≥ dip_pct from last_sell_price; avg_cost fully resets per round
+- `infinite_average_v0` — continuous averaging-down; unconditional re-entry the day after a sell (no price gate); avg_cost fully resets per round
 
 ## Architecture
 

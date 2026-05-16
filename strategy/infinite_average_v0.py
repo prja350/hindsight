@@ -15,11 +15,8 @@ class InfiniteAverageV0Strategy(BaseStrategy):
     def on_price_update(self, ctx: PriceContext, state: TickerState) -> Action:
         pos = state.position
         if pos is None:
-            if state.last_sell_price is None:
-                return Action(type="BUY", amount=self.add_amount)
-            if ctx.price <= state.last_sell_price * (1 - self.dip_pct):
-                return Action(type="BUY", amount=self.add_amount)
-            return Action(type="HOLD")
+            # Re-entry the day after a sell (or first entry). No price gate.
+            return Action(type="BUY", amount=self.add_amount)
 
         pnl_pct = net_unrealized_pct(state, ctx.price)
         if pnl_pct >= self.take_profit_pct:
