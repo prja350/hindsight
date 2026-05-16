@@ -13,6 +13,13 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
 )
 
+# Optional HTTP basic auth — enabled when both DASH_USER and DASH_PASS env vars set.
+_dash_user = os.getenv("DASH_USER")
+_dash_pass = os.getenv("DASH_PASS")
+if _dash_user and _dash_pass:
+    from dash_auth import BasicAuth
+    BasicAuth(app, {_dash_user: _dash_pass})
+
 app.layout = html.Div(
     [dash.page_container],
     style={'fontFamily': 'sans-serif', 'maxWidth': '1400px',

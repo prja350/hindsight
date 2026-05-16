@@ -1,3 +1,13 @@
+---
+title: Hindsight Taiwan Stock Backtest
+emoji: 📈
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 8050
+pinned: false
+---
+
 # hindsight
 
 Taiwan stock backtesting system: per-ticker strategy assignment with shared capital pool, retroactive split adjustment, multi-source data quality flags, Dash UI.
